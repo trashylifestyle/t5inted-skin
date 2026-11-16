@@ -1,0 +1,1200 @@
+local InventoryChanger = { Functions = {}, Selected = {}, SkinsList = nil };
+
+do
+    local Players = game:GetService("Players")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local HttpService = game:GetService("HttpService")
+    local Debris = game:GetService("Debris")
+    local client = Players.LocalPlayer
+    local PendingSkinChanges = {}
+    local GUIHooked = false
+    local OriginalSounds = {}
+    local OriginalTextures = {}
+    local ActiveKnifeTracks = {}
+    local OnToolEquipped
+    
+    local function cout(message)
+        print(message);
+    end
+    
+    cout('Loading...')
+    
+    if not getgenv().InventoryConnections then
+        getgenv().InventoryConnections = {};
+    end
+    
+    local Utilities = {};
+    
+    Utilities.AddConnection = function(signal, func)
+        local connect = signal:Connect(func);
+        table.insert(getgenv().InventoryConnections, { signal = signal, func = func, connect = connect });
+        return connect;
+    end
+    
+    Utilities.Unload = function()
+        for _, tbl in pairs(getgenv().InventoryConnections) do
+            if typeof(tbl) == "RBXScriptConnection" then
+                pcall(function() tbl:Disconnect() end)
+            elseif type(tbl) == 'table' and tbl.connect then
+                pcall(function() tbl.connect:Disconnect() end)
+            end
+        end
+        getgenv().InventoryConnections = {};
+    end
+    
+    local SkinAssets = ReplicatedStorage:WaitForChild("SkinAssets")
+    local Sounds = SkinAssets.GunShootSounds
+    local SkinModules = ReplicatedStorage:WaitForChild("SkinModules")
+    local Knives = SkinModules:WaitForChild("Knives")
+    local SkinsList = require(SkinModules)
+    InventoryChanger.SkinsList = SkinsList
+
+    local KnifeCFrameData = {
+        ["Aqua"] = CFrame.new(-0.07, -0.02, 0.1517, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Arcane"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Balloon"] = CFrame.new(-0.707, 0.1097, -0.0029, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Ban Hammer"] = CFrame.new(-0.0201, -0.0473, -0.0001, 0, 1, -0.0028, 0, -0.0028, -1, -1, 0, 0),
+        ["Banana"] = CFrame.new(-0.3712, -0.1312, 0.0764, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Bat Sharp"] = CFrame.new(0.0206, 0.0713, -0.0302, 1, 0, 0, 0, -1, 0, 0, 0, -1),
+        ["Beary"] = CFrame.new(0.1, -0.08, -1.8, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Black Marker"] = CFrame.new(0.0357, 0.0153, 0.0236, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Block"] = CFrame.new(-0.4198, -0.0009, 0.0199, 0, 0.0028, -1, 0, 1, 0.0028, 1, 0, 0),
+        ["Blossom"] = CFrame.new(-0.6, 0.0272, -0.1611, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Blue Dagger"] = CFrame.new(0.6726, -0.0406, -0.1298, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Blue Marker"] = CFrame.new(0.0357, 0.0153, 0.0236, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Boxcutter"] = CFrame.new(0.1335, -0.0369, 0.0362, 1, 0, 0, 0, -1, 0, 0, 0, -1),
+        ["Boy"] = CFrame.new(-0.0212, 0.1697, -0.0284, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Brainrot"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Brown Marker"] = CFrame.new(0.0357, 0.0153, 0.0236, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Bubu"] = CFrame.new(0.006, 0.5219, 0.0138, 0, 0, -1, 1, 0, 0, 0, -1, 0),
+        ["Buster"] = CFrame.new(0.2843, -0.008, 0.0139, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Butterfly"] = CFrame.new(0.248, -0.0401, -0.0659, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Candy"] = CFrame.new(0.8449, 0.132, -0.0134, 0, 0, -1, 0, 1, 0, 1, 0, 0),
+        ["Candy Skewer"] = CFrame.new(-0.16, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Cartoon"] = CFrame.new(0.0095, 0.0122, 0.0054, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Cat"] = CFrame.new(-1.2578, 0.018, 0.0354, 0, 0, 1, 0, 1, 0, -1, 0, 0),
+        ["Crystal Karambit"] = CFrame.new(-1.5997, -0.0777, -0.0473, 0, 0.3746, -0.9272, 0, 0.9272, 0.3746, 1, 0, 0),
+        ["Cupid"] = CFrame.new(0.248, -0.0401, -0.0659, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["CyanKarambit"] = CFrame.new(-0.07, -0.02, 0.1517, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Dog"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Dragon"] = CFrame.new(0.1715, -0.0721, -0.0172, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Dual Bayonets"] = CFrame.new(-0.5204, 0.0484, -0.0011, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["DualCryptos"] = CFrame.new(0.1149, 0.1385, -0.0219, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Duck"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["ETERNAL"] = CFrame.new(-0.2, 0.15, 0, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Emerald"] = CFrame.new(0.1545, 0.1167, 0.0003, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Emerald Butterfly"] = CFrame.new(0.1299, 0.0244, -0.0149, 1, 0, 0, 0, -1, 0, 0, 0, -1),
+        ["Emerald-Bayonet"] = CFrame.new(0.248, -0.0401, -0.0659, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Etheral"] = CFrame.new(0.5409, -0.0025, 0.1248, -1, 0, 0, 0, 1, 0, 0, 0, -1),
+        ["Frog"] = CFrame.new(0.7638, 0.0409, -0.0497, 0.3746, 0.9272, 0, -0.9272, 0.3746, 0, 0, 0, 1),
+        ["GPO-Knife"] = CFrame.new(0.693, -0.0903, -0.0029, -1, 0, 0, 0, 1, 0, 0, 0, -1),
+        ["GPO-Knife Prestige"] = CFrame.new(0.693, -0.0903, -0.0029, -1, 0, 0, 0, 1, 0, 0, 0, -1),
+        ["GPOII"] = CFrame.new(0.248, -0.0401, -0.0659, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Galactic"] = CFrame.new(-0.2615, 0.0143, 0.0307, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Galactic-Red"] = CFrame.new(-0.2615, 0.0143, 0.0307, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Galaxy Karambit"] = CFrame.new(-1.2811, -0.0814, -0.0313, -0.342, -0.9397, 0, -0.9397, 0.342, 0, 0, 0, -1),
+        ["GingerBread"] = CFrame.new(0.3, 0, 0, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Girl"] = CFrame.new(0.1689, 0.0224, 0.0336, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Golden"] = CFrame.new(0.2692, 0.0061, -0.0048, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Golden Age Tanto"] = CFrame.new(0.3955, -0.0088, -0.0174, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Gothic"] = CFrame.new(-0.1401, 0.0152, 0.0016, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Green Dagger"] = CFrame.new(0.0952, -0.0406, -0.0215, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Green Marker"] = CFrame.new(0.0357, 0.0153, 0.0236, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Grumpy"] = CFrame.new(-0.0426, -0.0865, 0.0101, 0.0028, 1, 0, 1, -0.0028, 0, 0, 0, -1),
+        ["Halloween 26"] = CFrame.new(-1.5899, 0.0651, -0.113, -0.966, -0.217, 0.1406, -0.2205, 0.9753, -0.0099, -0.1349, -0.0405, -0.99),
+        ["Halloween23"] = CFrame.new(0.2935, -0.2039, 0.0589, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Heartbreak"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Heaven"] = CFrame.new(0.1476, 0.287, -0.0031, 0, 0.7986, 0.6018, 0, -0.6018, 0.7986, 1, 0, 0),
+        ["Hoodmas"] = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+        ["Ice Sword"] = CFrame.new(0.2487, 0.0045, -0.0039, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Iced Out"] = CFrame.new(-1.5891, 0.185, -0.0039, -1, 0, 0, 0, 1, 0, 0, 0, -1),
+        ["Jade"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Jellyfish"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Katar"] = CFrame.new(-0.5558, -0.5334, 0.0669, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Kawaii"] = CFrame.new(-0.2851, 0.0385, -0.0219, 0, -1, 0, 0, 0, -1, 1, 0, 0),
+        ["Kingpin"] = CFrame.new(-0.6, 0.0145, 0.0096, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Kitchen"] = CFrame.new(0.0464, -0.2084, -0.0175, 0, 0, -1, 0, 1, 0, 1, 0, 0),
+        ["Kunai"] = CFrame.new(0.0728, 0.0431, 0.0374, 0, -1, 0, -1, 0, 0, 0, 0, -1),
+        ["Love"] = CFrame.new(-0.3523, 0.0615, -0.0601, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Love Kukri"] = CFrame.new(0.65, 0.4193, -0.0284, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Lovely"] = CFrame.new(-0.8, 0, 0, -1, 0, 0, 0, -0.9848, -0.1736, 0, -0.1736, 0.9848),
+        ["Metal"] = CFrame.new(0.2734, 0.006, 0.0099, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Military"] = CFrame.new(0.0253, 0.1061, 0.0005, 0, 0, -1, 0, 1, 0, 1, 0, 0),
+        ["Mochi"] = CFrame.new(-0.0296, 0.5273, -0.0353, 0, -0.0001, -1, 1, 0, 0, 0, -1, 0.0001),
+        ["Moon"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Music"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Mystical"] = CFrame.new(0.1462, 0.0104, -0.0166, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Nightmare"] = CFrame.new(-0.0173, 0.0165, -0.0453, 0, 0, -1, 0, 1, 0, 1, 0, 0),
+        ["Orange Marker"] = CFrame.new(0.0357, 0.0153, 0.0236, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Paper"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Penguin Ice Cream"] = CFrame.new(-0.0782, 0.0323, -0.1721, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Petal"] = CFrame.new(-0.6, 0.0272, -0.1611, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Pink"] = CFrame.new(-0.2009, -0.0211, -0.0067, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Pink Marker"] = CFrame.new(0.0357, 0.0153, 0.0236, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Popsicle"] = CFrame.new(-0.0296, 0.5273, -0.0353, 0, -0.0001, -1, 1, 0, 0, 0, -1, 0.0001),
+        ["Portal"] = CFrame.new(-0.1021, 0.1506, -0.0065, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["PumpkinCat"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Purple Dagger"] = CFrame.new(0.6804, -0.0405, -0.0369, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Purple Marker"] = CFrame.new(0.0357, 0.0153, 0.0236, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["RGB Bubu"] = CFrame.new(0.006, 0.5219, 0.0138, 0, 0, -1, 1, 0, 0, 0, -1, 0),
+        ["RGB Butterfly"] = CFrame.new(0.1299, 0.0244, -0.0149, 1, 0, 0, 0, -1, 0, 0, 0, -1),
+        ["RGB Dual Bayonets"] = CFrame.new(-0.5204, 0.0484, -0.0011, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["RGB Karambit"] = CFrame.new(0.1476, 0.287, -0.0031, 0, 0.7986, 0.6018, 0, -0.6018, 0.7986, 1, 0, 0),
+        ["Ranked Bayonet"] = CFrame.new(0.248, -0.0401, -0.0659, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Raygun"] = CFrame.new(-0.4069, 0.0662, 0.0102, 1, 0, 0, 0, -1, 0, 0, 0, -1),
+        ["Red Dagger"] = CFrame.new(0.1051, -0.0556, -0.015, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Red Marker"] = CFrame.new(0.0357, 0.0153, 0.0236, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Red Tiger"] = CFrame.new(0.1765, 0.0277, 0.0266, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Reporter Hammer"] = CFrame.new(-0.0201, -0.0473, -0.0001, 0, 1, -0.0028, 0, -0.0028, -1, -1, 0, 0),
+        ["Reptile"] = CFrame.new(0.1179, 0.2743, -0.0466, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+        ["Ribbon"] = CFrame.new(-0.0296, 0.5273, -0.0353, 0, -0.0001, -1, 1, 0, 0, 0, -1, 0.0001),
+        ["RoseKarambit"] = CFrame.new(-0.07, -0.02, 0.1517, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Ruby Fan"] = CFrame.new(-0.5311, -0.0073, 0.0273, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Runic"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Sakura"] = CFrame.new(-0.8, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Samurai"] = CFrame.new(-0.6, 0.055, 0.0923, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Scissor"] = CFrame.new(0.0673, 0.0749, -0.033, -1, 0, 0, 0, -1, 0, 0, 0, 1),
+        ["Screw Driver"] = CFrame.new(0.1096, -0.0281, 0.0006, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Shader"] = CFrame.new(0.3386, 0.0002, 0.0258, -1, 0, 0, 0, -1, 0, 0, 0, 1),
+        ["Shadow"] = CFrame.new(1.125, 0, 0.0004, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Shark"] = CFrame.new(0.1605, 0.0067, 0.0064, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["Short Cake"] = CFrame.new(-0.0201, -0.0473, -0.0001, 0, 1, -0.0028, 0, -0.0028, -1, -1, 0, 0),
+        ["Shrimp"] = CFrame.new(-0.1428, -0.02, -0.0358, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Skull"] = CFrame.new(-0.6, -0.0305, -0.0528, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Solar"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Soul"] = CFrame.new(0.1299, 0.0244, -0.0149, 1, 0, 0, 0, -1, 0, 0, 0, -1),
+        ["SoulII"] = CFrame.new(-0.07, -0.02, 0.1517, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Spatula"] = CFrame.new(0.3012, 0.0112, -0.0121, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["SpiderLily"] = CFrame.new(-0.6, 0.0145, 0.0096, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Spooky"] = CFrame.new(-0.1074, -0.0247, -0.0215, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Stars"] = CFrame.new(0.9835, 0.0367, -0.0015, 0, 1, 0, -1, 0, 0, 0, 0, 1),
+        ["Sushi"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Undead"] = CFrame.new(-0.0731, 0.0291, 0.0042, -1, 0, 0, 0, -1, 0, 0, 0, 1),
+        ["Unicorn"] = CFrame.new(-0.07, -0.02, 0.1517, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["VIP"] = CFrame.new(-0.1428, -0.02, -0.0358, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Vampire"] = CFrame.new(-0.09, 0.06, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Void"] = CFrame.new(0.0116, 0.0247, 0.0023, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+        ["Watermelon"] = CFrame.new(0.1605, 0.0067, 0.0064, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+        ["White Tanto"] = CFrame.new(0.3955, -0.0088, -0.0174, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Wild West"] = CFrame.new(0.3838, 0.0115, -0.0011, 0, -1, 0, 1, 0, 0, 0, 0, 1),
+        ["WinterKarambit"] = CFrame.new(0.3838, 0.0115, -0.0011, 0, -1, 0, 1, 0, 0, 0, 0, 1),
+        ["Wire"] = CFrame.new(0.1149, 0.1385, -0.0219, 0, 1, 0, 0, 0, -1, -1, 0, 0),
+        ["Wither"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["World"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["Wraith"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1),
+        ["XMAS"] = CFrame.new(-1.2728, -0.1281, -0.0394, 0, 0.7193, 0.6947, 0, 0.6947, -0.7193, -1, 0, 0),
+        ["XMAS24"] = CFrame.new(0.248, -1, -0.0659, 0, 1, 0, 1, 0, 0, 0, 0, -1),
+        ["Xmas25"] = CFrame.new(0, 0, 0, 0, 1, 0, -1, 0, 0, 0, 0, -1)
+    }
+
+    local KnifeAnimData = {
+        ["Aqua"] = { Equip = "rbxassetid://120409512712051", Slash = nil, EquipSound = "rbxassetid://84642692518580", SlashSound = nil },
+        ["Arcane"] = { Equip = "rbxassetid://139028207371910", Slash = nil, EquipSound = "rbxassetid://129087599712749", SlashSound = nil },
+        ["Balloon"] = { Equip = "rbxassetid://124182131683316", Slash = "rbxassetid://81203597796654", EquipSound = "rbxassetid://89720981671799", SlashSound = "rbxassetid://129057305501000" },
+        ["Ban Hammer"] = { Equip = "rbxassetid://101734082455033", Slash = "rbxassetid://100888647843485", EquipSound = "rbxassetid://14924247275", SlashSound = "rbxassetid://6093463160" },
+        ["Banana"] = { Equip = "rbxassetid://14774469598", Slash = nil, EquipSound = "rbxassetid://14756552407", SlashSound = nil },
+        ["Beary"] = { Equip = "rbxassetid://120803452531045", Slash = "rbxassetid://113420665119959", EquipSound = "rbxassetid://136847939714595", SlashSound = nil },
+        ["Block"] = { Equip = "rbxassetid://83891936203676", Slash = "rbxassetid://128758550654441", EquipSound = "rbxassetid://82635010858802", SlashSound = "rbxassetid://73974031043598" },
+        ["Blossom"] = { Equip = "rbxassetid://124182131683316", Slash = "rbxassetid://79279285781384", EquipSound = "rbxassetid://133518539411339", SlashSound = "rbxassetid://73974031043598" },
+        ["Blue Dagger"] = { Equip = "rbxassetid://17824995184", Slash = nil, EquipSound = nil, SlashSound = nil },
+        ["Brainrot"] = { Equip = "rbxassetid://129707517947267", Slash = "rbxassetid://99490339241556", EquipSound = "rbxassetid://106928243252891", SlashSound = nil },
+        ["Bubu"] = { Equip = "rbxassetid://83790926034622", Slash = "rbxassetid://126963929322066", EquipSound = "rbxassetid://81061122386713", SlashSound = "rbxassetid://73974031043598" },
+        ["Butterfly"] = { Equip = "rbxassetid://116059594221183", Slash = "rbxassetid://123655643312020", EquipSound = "rbxassetid://83384611555981", SlashSound = nil },
+        ["Candy"] = { Equip = "rbxassetid://14778518400", Slash = nil, EquipSound = "rbxassetid://14723246098", SlashSound = nil },
+        ["Cartoon"] = { Equip = "rbxassetid://14228857569", Slash = nil, EquipSound = "rbxassetid://14220989455", SlashSound = nil },
+        ["Cat"] = { Equip = "rbxassetid://18770149140", Slash = nil, EquipSound = "rbxassetid://18699907799", SlashSound = nil },
+        ["Cupid"] = { Equip = "rbxassetid://16288600723", Slash = "rbxassetid://16288592646", EquipSound = "rbxassetid://16288435360", SlashSound = nil },
+        ["CyanKarambit"] = { Equip = "rbxassetid://78743267434817", Slash = nil, EquipSound = "rbxassetid://109954118300727", SlashSound = "rbxassetid://82576270048267" },
+        ["Dragon"] = { Equip = "rbxassetid://14217771789", Slash = nil, EquipSound = "rbxassetid://14217789230", SlashSound = nil },
+        ["Duck"] = { Equip = "rbxassetid://89973862506703", Slash = "rbxassetid://86919094724358", EquipSound = "rbxassetid://133518539411339", SlashSound = "rbxassetid://9068554227" },
+        ["Emerald"] = { Equip = "rbxassetid://78637958125532", Slash = nil, EquipSound = nil, SlashSound = nil },
+        ["Emerald Butterfly"] = { Equip = "rbxassetid://14918231706", Slash = "rbxassetid://14918233734", EquipSound = "rbxassetid://14931902491", SlashSound = nil },
+        ["Etheral"] = { Equip = "rbxassetid://15403988048", Slash = "rbxassetid://15403995174", EquipSound = "rbxassetid://15399804817", SlashSound = nil },
+        ["Frog"] = { Equip = "rbxassetid://14217315548", Slash = nil, EquipSound = "rbxassetid://4681191260", SlashSound = nil },
+        ["GPO-Knife"] = { Equip = "rbxassetid://13989242119", Slash = nil, EquipSound = nil, SlashSound = nil },
+        ["GPO-Knife Prestige"] = { Equip = "rbxassetid://13989242119", Slash = nil, EquipSound = nil, SlashSound = nil },
+        ["GPOII"] = { Equip = "rbxassetid://129585735985577", Slash = nil, EquipSound = "rbxassetid://979751563", SlashSound = nil },
+        ["Gothic"] = { Equip = "rbxassetid://17602480739", Slash = "rbxassetid://17602483730", EquipSound = "rbxassetid://17602203736", SlashSound = nil },
+        ["Green Dagger"] = { Equip = "rbxassetid://17825004320", Slash = nil, EquipSound = nil, SlashSound = nil },
+        ["Grumpy"] = { Equip = "rbxassetid://107525512952804", Slash = nil, EquipSound = "rbxassetid://137420515715273", SlashSound = nil },
+        ["Halloween 26"] = { Equip = "rbxassetid://80700389781565", Slash = "rbxassetid://99764555779962", EquipSound = "rbxassetid://128959641920203", SlashSound = nil },
+        ["Halloween23"] = { Equip = "rbxassetid://14930305410", Slash = nil, EquipSound = "rbxassetid://14924263955", SlashSound = nil },
+        ["Heartbreak"] = { Equip = "rbxassetid://79834660360848", Slash = nil, EquipSound = "rbxassetid://84435455000333", SlashSound = nil },
+        ["Heaven"] = { Equip = "rbxassetid://14500266726", Slash = "rbxassetid://95567610639078", EquipSound = "rbxassetid://14489860007", SlashSound = nil },
+        ["Jade"] = { Equip = "rbxassetid://100861370551954", Slash = "rbxassetid://98792787785936", EquipSound = "rbxassetid://81147423322987", SlashSound = "rbxassetid://129851800356242" },
+        ["Jellyfish"] = { Equip = "rbxassetid://91806134647495", Slash = "rbxassetid://112705089692569", EquipSound = "rbxassetid://88153824421159", SlashSound = nil },
+        ["Kawaii"] = { Equip = "rbxassetid://134033751260618", Slash = nil, EquipSound = "rbxassetid://95111689516664", SlashSound = nil },
+        ["Kingpin"] = { Equip = "rbxassetid://71018644852803", Slash = nil, EquipSound = "rbxassetid://82635010858802", SlashSound = nil },
+        ["Love"] = { Equip = "rbxassetid://16281379714", Slash = nil, EquipSound = "rbxassetid://16261771972", SlashSound = nil },
+        ["Lovely"] = { Equip = "rbxassetid://88357511114476", Slash = "rbxassetid://79279285781384", EquipSound = "rbxassetid://130610978995866", SlashSound = "rbxassetid://123145222797464" },
+        ["Metal"] = { Equip = "rbxassetid://18465336853", Slash = nil, EquipSound = "rbxassetid://18451942073", SlashSound = nil },
+        ["Military"] = { Equip = "rbxassetid://17117447141", Slash = nil, EquipSound = "rbxassetid://17112866105", SlashSound = nil },
+        ["Mochi"] = { Equip = "rbxassetid://101065656790507", Slash = "rbxassetid://110533976862550", EquipSound = "rbxassetid://93204169514315", SlashSound = "rbxassetid://86590852937001" },
+        ["Moon"] = { Equip = "rbxassetid://101025626362890", Slash = nil, EquipSound = "rbxassetid://136245511381616", SlashSound = "rbxassetid://129851800356242" },
+        ["Music"] = { Equip = "rbxassetid://96811171427126", Slash = nil, EquipSound = "rbxassetid://103809694877149", SlashSound = nil },
+        ["Mystical"] = { Equip = "rbxassetid://14496531574", Slash = nil, EquipSound = "rbxassetid://14489874349", SlashSound = nil },
+        ["Nightmare"] = { Equip = "rbxassetid://95569234021307", Slash = nil, EquipSound = "rbxassetid://130582129621111", SlashSound = nil },
+        ["Penguin Ice Cream"] = { Equip = "rbxassetid://18152340282", Slash = nil, EquipSound = nil, SlashSound = nil },
+        ["Petal"] = { Equip = "rbxassetid://108789057440441", Slash = "rbxassetid://79279285781384", EquipSound = "rbxassetid://130610978995866", SlashSound = "rbxassetid://123145222797464" },
+        ["Popsicle"] = { Equip = "rbxassetid://101863446850286", Slash = "rbxassetid://105907752085550", EquipSound = "rbxassetid://136258335960004", SlashSound = "rbxassetid://139251956308350" },
+        ["Portal"] = { Equip = "rbxassetid://16058633881", Slash = nil, EquipSound = "rbxassetid://16058846352", SlashSound = nil },
+        ["PumpkinCat"] = { Equip = "rbxassetid://72618941551182", Slash = "rbxassetid://135534851501997", EquipSound = "rbxassetid://129701521260350", SlashSound = nil },
+        ["Purple Dagger"] = { Equip = "rbxassetid://17824999722", Slash = nil, EquipSound = nil, SlashSound = nil },
+        ["RGB Bubu"] = { Equip = "rbxassetid://114901551128354", Slash = "rbxassetid://126963929322066", EquipSound = "rbxassetid://87617514527461", SlashSound = "rbxassetid://73974031043598" },
+        ["RGB Butterfly"] = { Equip = "rbxassetid://14918231706", Slash = "rbxassetid://14918233734", EquipSound = "rbxassetid://14931902491", SlashSound = nil },
+        ["RGB Karambit"] = { Equip = "rbxassetid://14500266726", Slash = "rbxassetid://95567610639078", EquipSound = "rbxassetid://14489860007", SlashSound = nil },
+        ["Raygun"] = { Equip = "rbxassetid://14929791273", Slash = nil, EquipSound = "rbxassetid://14924247275", SlashSound = nil },
+        ["Red Dagger"] = { Equip = "rbxassetid://17825008844", Slash = nil, EquipSound = nil, SlashSound = nil },
+        ["Reporter Hammer"] = { Equip = "rbxassetid://101734082455033", Slash = "rbxassetid://100888647843485", EquipSound = "rbxassetid://14924247275", SlashSound = "rbxassetid://6093463160" },
+        ["Reptile"] = { Equip = "rbxassetid://18788955930", Slash = "rbxassetid://18822034603", EquipSound = "rbxassetid://18765103349", SlashSound = nil },
+        ["Ribbon"] = { Equip = "rbxassetid://124102609796063", Slash = nil, EquipSound = "rbxassetid://130974579277249", SlashSound = nil },
+        ["RoseKarambit"] = { Equip = "rbxassetid://133322604274534", Slash = nil, EquipSound = "rbxassetid://81838819797562", SlashSound = nil },
+        ["Ruby Fan"] = { Equip = "rbxassetid://17363280469", Slash = nil, EquipSound = nil, SlashSound = nil },
+        ["Runic"] = { Equip = "rbxassetid://86728147479847", Slash = "rbxassetid://122368020117982", EquipSound = "rbxassetid://87254803631266", SlashSound = "rbxassetid://129851800356242" },
+        ["Sakura"] = { Equip = "rbxassetid://116077835913890", Slash = nil, EquipSound = "rbxassetid://76858401337065", SlashSound = nil },
+        ["Samurai"] = { Equip = "rbxassetid://109805119286520", Slash = nil, EquipSound = "rbxassetid://82524013545306", SlashSound = nil },
+        ["Shader"] = { Equip = "rbxassetid://16768096443", Slash = nil, EquipSound = "rbxassetid://16770028947", SlashSound = nil },
+        ["Shark"] = { Equip = "rbxassetid://121283743397220", Slash = "rbxassetid://138687336154461", EquipSound = "rbxassetid://113757347399390", SlashSound = "rbxassetid://117950049921876" },
+        ["Shrimp"] = { Equip = "rbxassetid://132059469725225", Slash = nil, EquipSound = "rbxassetid://82225573122590", SlashSound = nil },
+        ["Skull"] = { Equip = "rbxassetid://79609108940071", Slash = nil, EquipSound = "rbxassetid://104460452838262", SlashSound = "rbxassetid://133657983575161" },
+        ["Solar"] = { Equip = "rbxassetid://117446264210938", Slash = nil, EquipSound = "rbxassetid://104377064398169", SlashSound = "rbxassetid://129851800356242" },
+        ["Soul"] = { Equip = "rbxassetid://14918231706", Slash = "rbxassetid://14918233734", EquipSound = "rbxassetid://14931902491", SlashSound = nil },
+        ["SoulII"] = { Equip = "rbxassetid://127492294952252", Slash = nil, EquipSound = "rbxassetid://126391275001105", SlashSound = nil },
+        ["SpiderLily"] = { Equip = "rbxassetid://71018644852803", Slash = nil, EquipSound = "rbxassetid://119025749151226", SlashSound = nil },
+        ["Spooky"] = { Equip = "rbxassetid://15229606419", Slash = nil, EquipSound = "rbxassetid://15213880640", SlashSound = nil },
+        ["Stars"] = { Equip = "rbxassetid://14477490491", Slash = "rbxassetid://14477472666", EquipSound = "rbxassetid://14438969202", SlashSound = nil },
+        ["Sushi"] = { Equip = "rbxassetid://14217315548", Slash = "rbxassetid://113664070470351", EquipSound = "rbxassetid://4681191260", SlashSound = nil },
+        ["Undead"] = { Equip = "rbxassetid://15171600346", Slash = nil, EquipSound = "rbxassetid://15171624196", SlashSound = nil },
+        ["Unicorn"] = { Equip = "rbxassetid://18770826285", Slash = nil, EquipSound = "rbxassetid://18765082435", SlashSound = nil },
+        ["VIP"] = { Equip = "rbxassetid://136532305587329", Slash = nil, EquipSound = "rbxassetid://97689352670659", SlashSound = nil },
+        ["Void"] = { Equip = "rbxassetid://14774699952", Slash = nil, EquipSound = "rbxassetid://14756591763", SlashSound = nil },
+        ["Watermelon"] = { Equip = "rbxassetid://121283743397220", Slash = "rbxassetid://138687336154461", EquipSound = "rbxassetid://122059108971910", SlashSound = "rbxassetid://117950049921876" },
+        ["WinterKarambit"] = { Equip = "rbxassetid://122662874877696", Slash = nil, EquipSound = "rbxassetid://137722413196772", SlashSound = nil },
+        ["Wire"] = { Equip = "rbxassetid://97840089951430", Slash = nil, EquipSound = "rbxassetid://77910843149107", SlashSound = nil },
+        ["Wither"] = { Equip = "rbxassetid://109289105982608", Slash = nil, EquipSound = "rbxassetid://115131121381778", SlashSound = nil },
+        ["World"] = { Equip = "rbxassetid://138066022584623", Slash = nil, EquipSound = "rbxassetid://104512314148286", SlashSound = nil },
+        ["Wraith"] = { Equip = "rbxassetid://127687327772559", Slash = "rbxassetid://109398639510369", EquipSound = "rbxassetid://110342039294472", SlashSound = "rbxassetid://109363678069091" },
+        ["XMAS"] = { Equip = "rbxassetid://15685400944", Slash = "rbxassetid://15675788741", EquipSound = "rbxassetid://15687289998", SlashSound = nil },
+        ["XMAS24"] = { Equip = "rbxassetid://75179196503233", Slash = nil, EquipSound = "rbxassetid://113206651631988", SlashSound = nil },
+        ["Xmas25"] = { Equip = "rbxassetid://86045955210187", Slash = nil, EquipSound = "rbxassetid://71064131717700", SlashSound = nil }
+    }
+
+    local function StopKnifeAnimations(tool)
+        if ActiveKnifeTracks[tool] then
+            for _, track in ipairs(ActiveKnifeTracks[tool]) do
+                pcall(function()
+                    track:Stop(0.1)
+                    track:Destroy()
+                end)
+            end
+            ActiveKnifeTracks[tool] = nil
+        end
+    end
+
+    local function PlayKnifeSound(tool, soundId)
+        if not soundId or not tool then return end
+        local handle = tool:FindFirstChild("Handle")
+        if not handle then return end
+        local sound = Instance.new("Sound")
+        sound.SoundId = soundId
+        sound.Parent = handle
+        sound:Play()
+        Debris:AddItem(sound, 3)
+    end
+
+    local function PlayKnifeEquip(tool)
+        if not tool or tool.Name ~= "[Knife]" then return end
+        StopKnifeAnimations(tool)
+
+        local skin = InventoryChanger.Selected["[Knife]"] or (tool:FindFirstChild("Handle") and tool.Handle:GetAttribute("SkinName"))
+        if not skin or skin == "" then return end
+
+        local animData = KnifeAnimData[skin]
+        if not animData then return end
+
+        if animData.EquipSound then
+            PlayKnifeSound(tool, animData.EquipSound)
+        end
+
+        if animData.Equip then
+            local char = tool.Parent
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local animator = hum and hum:FindFirstChildOfClass("Animator")
+            if animator then
+                local anim = Instance.new("Animation")
+                anim.AnimationId = animData.Equip
+                local ok, track = pcall(function()
+                    return animator:LoadAnimation(anim)
+                end)
+                anim:Destroy()
+                if ok and track then
+                    track.Priority = Enum.AnimationPriority.Action
+                    track.Looped = false
+                    track:Play(0.1)
+                    ActiveKnifeTracks[tool] = { track }
+                end
+            end
+        end
+    end
+
+    local function PlayKnifeSlash(tool)
+        if not tool or tool.Name ~= "[Knife]" then return end
+
+        local skin = InventoryChanger.Selected["[Knife]"] or (tool:FindFirstChild("Handle") and tool.Handle:GetAttribute("SkinName"))
+        if not skin or skin == "" then return end
+
+        local animData = KnifeAnimData[skin]
+        if not animData then return end
+
+        if animData.SlashSound then
+            PlayKnifeSound(tool, animData.SlashSound)
+        end
+
+        if animData.Slash then
+            local char = tool.Parent
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local animator = hum and hum:FindFirstChildOfClass("Animator")
+            if animator then
+                local anim = Instance.new("Animation")
+                anim.AnimationId = animData.Slash
+                local ok, track = pcall(function()
+                    return animator:LoadAnimation(anim)
+                end)
+                anim:Destroy()
+                if ok and track then
+                    track.Priority = Enum.AnimationPriority.Action4
+                    track.Looped = false
+                    track:Play(0.1)
+                    ActiveKnifeTracks[tool] = ActiveKnifeTracks[tool] or {}
+                    table.insert(ActiveKnifeTracks[tool], track)
+                end
+            end
+        end
+    end
+
+    local function AttachKnifeMesh(default, mesh, holdCFrame)
+        if mesh:IsA("BasePart") then
+            mesh.Anchored = false
+            mesh.CanCollide = false
+            mesh.Massless = true
+            for _, desc in ipairs(mesh:GetDescendants()) do
+                if desc:IsA("BasePart") then
+                    desc.Anchored = false
+                    desc.CanCollide = false
+                    desc.Massless = true
+                end
+            end
+            local weld = Instance.new("Weld")
+            weld.Part0 = default
+            weld.Part1 = mesh
+            weld.C0 = holdCFrame
+            weld.Parent = mesh
+        elseif mesh:IsA("Model") then
+            local primary = mesh.PrimaryPart or mesh:FindFirstChildWhichIsA("BasePart", true)
+            if primary then
+                for _, desc in ipairs(mesh:GetDescendants()) do
+                    if desc:IsA("BasePart") then
+                        desc.Anchored = false
+                        desc.CanCollide = false
+                        desc.Massless = true
+                        if desc ~= primary and not desc:FindFirstChildWhichIsA("JointInstance") and not desc:FindFirstChildWhichIsA("WeldConstraint") then
+                            local subWeld = Instance.new("WeldConstraint")
+                            subWeld.Part0 = primary
+                            subWeld.Part1 = desc
+                            subWeld.Parent = desc
+                        end
+                    end
+                end
+                local weld = Instance.new("Weld")
+                weld.Part0 = default
+                weld.Part1 = primary
+                weld.C0 = holdCFrame
+                weld.Parent = primary
+            end
+        end
+    end
+    
+    local function StoreOriginalSound(Weapon)
+        if not Weapon or not Weapon.Handle then return end
+        local ShootSound = Weapon.Handle:FindFirstChild('ShootSound')
+        if not ShootSound then return end
+        
+        if not OriginalSounds[Weapon.Name] then
+            OriginalSounds[Weapon.Name] = ShootSound.SoundId
+        end
+    end
+    
+    local function StoreOriginalTexture(Weapon)
+        if not Weapon or not Weapon:FindFirstChild("Default") then return end
+        
+        if not OriginalTextures[Weapon.Name] then
+            OriginalTextures[Weapon.Name] = Weapon.Default.TextureID
+        end
+    end
+    
+    local function RestoreOriginalSound(Weapon)
+        if not Weapon or not Weapon.Handle then return end
+        local ShootSound = Weapon.Handle:FindFirstChild('ShootSound')
+        if not ShootSound then return end
+        
+        if OriginalSounds[Weapon.Name] then
+            ShootSound.SoundId = OriginalSounds[Weapon.Name]
+        end
+    end
+    
+    local function GetCustomSound(Weapon, Skin)
+        if not Weapon or not Weapon.Handle then return nil end
+        
+        local ToolSounds = Sounds:FindFirstChild(Weapon.Name)
+        if not ToolSounds then return nil end
+
+        local ActualThing = ToolSounds:FindFirstChild(Skin)
+        if not ActualThing then return nil end
+
+        if Weapon.Name == '[RPG]' then
+            ActualThing = ActualThing:FindFirstChild('Swoosh')
+            if not ActualThing or (ActualThing and not ActualThing:IsA('ValueBase')) then 
+                return nil
+            end
+        else
+            if not ActualThing:IsA('ValueBase') then 
+                return nil
+            end
+        end
+        
+        return ActualThing.Value
+    end
+    
+    local function ResetToDefault(Weapon)
+        if not Weapon then return end
+        
+        if Weapon.Name == "[Wallet]" then
+            for _, x in Weapon.Default:GetDescendants() do 
+                pcall(function() x:Destroy() end) 
+            end
+            Weapon.C1.Transparency = 0
+            Weapon.C2.Transparency = 0
+            Weapon.Default.Transparency = 0
+            for i,v in Weapon.C1:GetChildren() do if v:IsA("Decal") then v.Transparency = 0 end end
+            for i,v in Weapon.C2:GetChildren() do if v:IsA("Decal") then v.Transparency = 0 end end
+        elseif Weapon.Name == "[Knife]" then
+            StopKnifeAnimations(Weapon)
+            if Weapon:FindFirstChild("Default") then
+                Weapon.Default:ClearAllChildren()
+                Weapon.Default.Transparency = 0
+            end
+        else
+            if Weapon:FindFirstChild("Default") then
+                Weapon.Default.Transparency = 0
+                if OriginalTextures[Weapon.Name] then
+                    Weapon.Default.TextureID = OriginalTextures[Weapon.Name]
+                else
+                    local DefaultGunModel = SkinAssets.Parent.SkinModules.GunModels:FindFirstChild(Weapon.Name)
+                    if DefaultGunModel then
+                        Weapon.Default.TextureID = DefaultGunModel.TextureID
+                    end
+                end
+                for _, child in Weapon.Default:GetChildren() do
+                    if child:IsA("MeshPart") and child.Name == "Mesh" then
+                        child:Destroy()
+                    end
+                    if child:IsA("Weld") then
+                        child:Destroy()
+                    end
+                end
+            end
+        end
+        
+        if Weapon.Name == "[Silencer]" and Weapon:FindFirstChild("Part") then
+            Weapon.Part.Transparency = 0
+        end
+        
+        if Weapon.Handle then
+            Weapon.Handle:SetAttribute("SkinName", "")
+            RestoreOriginalSound(Weapon)
+        end
+    end
+    
+    local function ApplyKnifeSkin(Weapon, Skin, Table)
+        if not Weapon or not Weapon:FindFirstChild("Default") then
+            return false
+        end
+        
+        Weapon.Default:ClearAllChildren()
+        
+        local SkinMesh = Knives:FindFirstChild(Skin)
+        if SkinMesh then
+            local Mesh = SkinMesh:Clone()
+            Mesh.Name = "Mesh"
+            Mesh.Parent = Weapon.Default
+            Weapon.Default.Transparency = 1
+            
+            local holdCFrame = KnifeCFrameData[Skin] or (Table and Table.CFrame) or CFrame.new()
+            AttachKnifeMesh(Weapon.Default, Mesh, holdCFrame)
+        end
+        
+        if Weapon.Handle then
+            Weapon.Handle:SetAttribute("SkinName", Skin)
+        end
+
+        if Weapon.Parent == client.Character then
+            PlayKnifeEquip(Weapon)
+        end
+        
+        return true
+    end
+    
+    local function ApplySkinVisual(Weapon, Skin, Table)
+        if not Weapon or not Weapon:FindFirstChild("Default") then 
+            return false 
+        end
+        
+        if Weapon.Name == "[Knife]" then
+            return ApplyKnifeSkin(Weapon, Skin, Table)
+        end
+        
+        if not OriginalTextures[Weapon.Name] then
+            OriginalTextures[Weapon.Name] = Weapon.Default.TextureID
+        end
+        
+        for i,v in pairs(Weapon.Default:GetChildren()) do 
+            if v:IsA("ParticleEmitter") then 
+                v:Destroy() 
+            end 
+        end
+        
+        if Weapon.Name == "[Silencer]" then
+            if Weapon:FindFirstChild("Part") then
+                Weapon.Part.Transparency = 0
+            end
+        end
+        
+        if Table and typeof(Table.TextureID) == "string" then
+            Weapon.Default.TextureID = Table.TextureID
+            Weapon.Default.Transparency = 0
+            Weapon.Default:ClearAllChildren()
+        elseif Table and Weapon.Name == "[Wallet]" then
+            for i, v in pairs(Weapon:GetDescendants()) do if v.Name == Skin then Weapon.Handle:SetAttribute("SkinName", Skin) return true end end
+            local Wallets = SkinModules.Wallets
+            local Mesh = Wallets:FindFirstChild(Skin)
+            if Mesh then
+                Mesh = Mesh:Clone()
+                local Weld = Instance.new("Weld", Mesh)
+                Mesh.Name = "Mesh"
+                Weapon.C1.Transparency = 1
+                Weapon.C2.Transparency = 1
+                for i,v in Weapon.C1:GetChildren() do if v:IsA("Decal") then v.Transparency = 1 end end
+                for i,v in Weapon.C2:GetChildren() do if v:IsA("Decal") then v.Transparency = 1 end end
+                Weapon.Default.Transparency = 1
+                Weld.C0 = SkinsList[Weapon.Name][Skin].CFrame
+                Weld.Part0 = Weapon.Default
+                Weld.Part1 = Mesh
+                Mesh.Parent = Weapon.Default
+            end
+        elseif Table and Weapon.Name == "[Bat]" then
+            for i, v in pairs(Weapon:GetDescendants()) do if v.Name == Skin then Weapon.Handle:SetAttribute("SkinName", Skin) return true end end
+            local Bats = SkinModules.Bats
+            local Mesh = Bats:FindFirstChild(Skin)
+            if Mesh then
+                Mesh = Mesh:Clone()
+                local Weld = Instance.new("Weld", Mesh)
+                Mesh.Name = "Mesh"
+                Weapon.Default.Transparency = 1
+                Weapon.Handle.Transparency = 1
+                for i,v in Weapon.Default:GetChildren() do if v:IsA("Decal") then v.Transparency = 1 end end
+                for i,v in Weapon.Handle:GetChildren() do if v:IsA("Decal") then v.Transparency = 1 end end
+                Weapon.Default.Transparency = 1
+                Weld.C0 = SkinsList[Weapon.Name][Skin].CFrame
+                Weld.Part0 = Weapon.Default
+                Weld.Part1 = Mesh
+                Mesh.Parent = Weapon.Default
+            end
+        elseif Table then
+            for i, v in pairs(Weapon:GetDescendants()) do if v.Name == Skin then Weapon.Handle:SetAttribute("SkinName", Skin) return true end end
+            for _, x in Weapon:GetDescendants() do if (not x:IsA("MeshPart") or x.Name == Skin or x.Name == "Default") then continue end x:Destroy() end
+            task.wait()
+            Weapon.Default.TextureID = "rbxassetid://515583300"
+            local Mesh = Table.TextureID:Clone()
+            local Weld = Instance.new("Weld", Mesh)
+            Mesh.Name = "Mesh"
+            Weapon.Default.Transparency = 1
+            Weld.C0 = SkinsList[Weapon.Name][Skin].CFrame
+            Weld.Part0 = Weapon.Default
+            Weld.Part1 = Mesh
+            Mesh.Parent = Weapon.Default
+        end
+        
+        if Weapon.Handle then
+            Weapon.Handle:SetAttribute("SkinName", Skin)
+        end
+        return true
+    end
+    
+    local function ApplyCustomSound(Weapon, Skin)
+        if not Weapon or not Weapon.Handle then return end
+        local ShootSound = Weapon.Handle:FindFirstChild('ShootSound')
+        if not ShootSound then return end
+
+        local customSound = GetCustomSound(Weapon, Skin)
+        if customSound then
+            ShootSound.SoundId = customSound
+        end
+    end
+    
+    local function ApplyFullSkin(Weapon, Skin, Table)
+        if not Weapon then return false end
+        
+        StoreOriginalSound(Weapon)
+        StoreOriginalTexture(Weapon)
+        
+        local success = ApplySkinVisual(Weapon, Skin, Table)
+        
+        if success then
+            ApplyCustomSound(Weapon, Skin)
+        end
+        
+        return success
+    end
+    
+    local function UpdateSkinUnlock()
+        pcall(function()
+            local playerGui = client:FindFirstChild("PlayerGui")
+            if not playerGui then return end
+            
+            local mainGui = playerGui:FindFirstChild("MainScreenGui")
+            if not mainGui then return end
+            
+            local weaponSkinsGui = mainGui:FindFirstChild("WeaponSkinsGUI")
+            if not weaponSkinsGui then return end
+            
+            local body = weaponSkinsGui:FindFirstChild("Body")
+            if not body then return end
+            
+            local wrapper = body:FindFirstChild("Wrapper")
+            if not wrapper then return end
+            
+            local skinView = wrapper:FindFirstChild("SkinView")
+            if not skinView then return end
+            
+            local frame = skinView:FindFirstChild("Frame")
+            if not frame then return end
+            
+            local skins = frame:FindFirstChild("Skins")
+            if not skins then return end
+            
+            local contents = skins:FindFirstChild("Contents")
+            if not contents then return end
+            
+            local entries = contents:FindFirstChild("Entries")
+            if not entries then return end
+            
+            local dataFolder = client:FindFirstChild("DataFolder")
+            if not dataFolder then return end
+            
+            local skinsValue = dataFolder:FindFirstChild("Skins")
+            if skinsValue then
+                local success, ownedSkins = pcall(HttpService.JSONDecode, HttpService, skinsValue.Value)
+                if success and type(ownedSkins) == "table" then
+                    for _, skinFrame in ipairs(entries:GetChildren()) do
+                        if skinFrame:IsA("Frame") and skinFrame.Name ~= "SkinEntryTemplate" then
+                            local weaponName = skinFrame.Name:match("%[(.-)%]")
+                            if weaponName then
+                                weaponName = "[" .. weaponName .. "]"
+                                local skinDisplayName = skinFrame.Name:gsub("%[.-%]", "")
+                                
+                                local preview = skinFrame:FindFirstChild("Preview")
+                                if preview then
+                                    local lockLabel = preview:FindFirstChild("LockImageLabel")
+                                    local amountValue = preview:FindFirstChild("AmountValue")
+                                    local sellButton = skinFrame:FindFirstChild("SkinInfo")
+                                    if sellButton then
+                                        sellButton = sellButton:FindFirstChild("Container")
+                                        if sellButton then
+                                            sellButton = sellButton:FindFirstChild("SellButton")
+                                        end
+                                    end
+                                    
+                                    local owns = ownedSkins[weaponName] and ownedSkins[weaponName][skinDisplayName]
+                                    
+                                    if owns and owns > 0 then
+                                        if lockLabel then lockLabel.Visible = false end
+                                        if amountValue then
+                                            amountValue.Visible = true
+                                            amountValue.Text = "x" .. owns
+                                        end
+                                        if sellButton then sellButton.Visible = true end
+                                    else
+                                        if lockLabel then lockLabel.Visible = true end
+                                        if amountValue then amountValue.Visible = false end
+                                        if sellButton then sellButton.Visible = false end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            
+            local equipSkins = dataFolder:FindFirstChild("Information")
+            if equipSkins then
+                equipSkins = equipSkins:FindFirstChild("EquipSkins")
+                if equipSkins then
+                    local success, equipped = pcall(HttpService.JSONDecode, HttpService, equipSkins.Value)
+                    if success and type(equipped) == "table" then
+                        for _, skinFrame in ipairs(entries:GetChildren()) do
+                            if skinFrame:IsA("Frame") and skinFrame.Name ~= "SkinEntryTemplate" then
+                                local preview = skinFrame:FindFirstChild("Preview")
+                                if preview then
+                                    local equippedBadge = preview:FindFirstChild("Equipped")
+                                    if equippedBadge then
+                                        equippedBadge.Visible = false
+                                    end
+                                end
+                            end
+                        end
+                        
+                        for weaponName, skinName in pairs(equipped) do
+                            if skinName ~= false then
+                                for _, skinFrame in ipairs(entries:GetChildren()) do
+                                    if skinFrame:IsA("Frame") and skinFrame.Name == weaponName .. skinName then
+                                        local preview = skinFrame:FindFirstChild("Preview")
+                                        if preview then
+                                            local equippedBadge = preview:FindFirstChild("Equipped")
+                                            if equippedBadge then
+                                                equippedBadge.Visible = true
+                                            end
+                                        end
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    local function UpdateEquipSkins(weaponName, skinName)
+        pcall(function()
+            local dataFolder = client:FindFirstChild("DataFolder")
+            if not dataFolder then return end
+            local information = dataFolder:FindFirstChild("Information")
+            if not information then return end
+            
+            local equipSkins = information:FindFirstChild("EquipSkins")
+            if not equipSkins then
+                equipSkins = Instance.new("StringValue")
+                equipSkins.Name = "EquipSkins"
+                equipSkins.Value = "{}"
+                equipSkins.Parent = information
+            end
+            
+            local equipped = {}
+            local currentValue = equipSkins.Value
+            if currentValue ~= "" and currentValue ~= "[]" then
+                local success, decoded = pcall(HttpService.JSONDecode, HttpService, currentValue)
+                if success and type(decoded) == "table" then
+                    equipped = decoded
+                end
+            end
+            
+            if skinName then
+                equipped[weaponName] = skinName
+            else
+                equipped[weaponName] = false
+            end
+            
+            equipSkins.Value = HttpService:JSONEncode(equipped)
+            
+            UpdateSkinUnlock()
+        end)
+    end
+    
+    local function GiveAllSkins()
+        local dataFolder = client:FindFirstChild("DataFolder")
+        if not dataFolder then return false end
+        
+        local startTime = tick()
+        repeat
+            task.wait(0.1)
+            if tick() - startTime > 120 then
+                cout('GiveAllSkins', 'Timeout waiting for LOAD_SAVE_DATA')
+                return false
+            end
+        until client:FindFirstChild("LOAD_SAVE_DATA")
+        
+        local DataTable = {}
+        local AmountOfSkins = 1
+        
+        for weaponName, weaponSkins in pairs(SkinsList) do
+            DataTable[weaponName] = {}
+            for skinName, _ in pairs(weaponSkins) do
+                DataTable[weaponName][skinName] = AmountOfSkins
+            end
+        end
+        
+        local skinsValue = dataFolder:FindFirstChild("Skins")
+        if skinsValue then
+            skinsValue.Value = HttpService:JSONEncode(DataTable)
+            cout('Loading......')
+            UpdateSkinUnlock()
+            return true
+        end
+        return false
+    end
+    
+    local function FindWeapon(weaponName, instance)
+        if not instance then return nil end
+        for _, v in ipairs(instance:GetChildren()) do
+            if v:IsA('Tool') and v.Name == weaponName then
+                return v
+            end
+        end
+        return nil
+    end
+
+    OnToolEquipped = function(tool)
+        if tool:IsA("Tool") and (tool:FindFirstChild("GunScript") or tool.Name == "[Knife]") then
+            local skinName = InventoryChanger.Selected[tool.Name]
+            
+            if PendingSkinChanges[tool.Name] then
+                skinName = PendingSkinChanges[tool.Name]
+                PendingSkinChanges[tool.Name] = nil
+            end
+            
+            if skinName then
+                local Table = nil
+                if SkinsList[tool.Name] then
+                    for i,v in pairs(SkinsList[tool.Name]) do
+                        if i == skinName then
+                            Table = v
+                            break
+                        end
+                    end
+                end
+                if Table then
+                    ApplyFullSkin(tool, skinName, Table)
+                elseif tool.Name == "[Knife]" then
+                    ApplyFullSkin(tool, skinName, {})
+                end
+            else
+                ResetToDefault(tool)
+            end
+        end
+    end
+    
+    InventoryChanger.Functions.Equip = function(weaponName, skinName)
+        local currentSkin = InventoryChanger.Selected[weaponName]
+        
+        if skinName and currentSkin == skinName then
+            skinName = nil
+        end
+        
+        InventoryChanger.Selected[weaponName] = skinName
+        UpdateEquipSkins(weaponName, skinName)
+        
+        local weapon = FindWeapon(weaponName, client.Character)
+        
+        if weapon then
+            if skinName then
+                PendingSkinChanges[weaponName] = skinName
+            else
+                PendingSkinChanges[weaponName] = nil
+            end
+            OnToolEquipped(weapon)
+        else
+            weapon = FindWeapon(weaponName, client.Backpack)
+            if weapon then
+                ResetToDefault(weapon)
+            end
+        end
+        
+        UpdateSkinUnlock()
+    end
+    
+    local function OnToolUnequipped(tool)
+        if tool:IsA("Tool") and (tool:FindFirstChild("GunScript") or tool.Name == "[Knife]") then
+            ResetToDefault(tool)
+        end
+    end
+    
+    local function HookToolEvents(tool)
+        if not tool:IsA("Tool") or not (tool:FindFirstChild("GunScript") or tool.Name == "[Knife]") then
+            return
+        end
+        
+        if getgenv().InventoryConnections[tool.Name .. "_Equipped"] then
+            pcall(function() getgenv().InventoryConnections[tool.Name .. "_Equipped"]:Disconnect() end)
+        end
+        if getgenv().InventoryConnections[tool.Name .. "_Unequipped"] then
+            pcall(function() getgenv().InventoryConnections[tool.Name .. "_Unequipped"]:Disconnect() end)
+        end
+        if getgenv().InventoryConnections[tool.Name .. "_Activated"] then
+            pcall(function() getgenv().InventoryConnections[tool.Name .. "_Activated"]:Disconnect() end)
+        end
+        
+        getgenv().InventoryConnections[tool.Name .. "_Equipped"] = tool.Equipped:Connect(function()
+            OnToolEquipped(tool)
+        end)
+        
+        getgenv().InventoryConnections[tool.Name .. "_Unequipped"] = tool.Unequipped:Connect(function()
+            OnToolUnequipped(tool)
+        end)
+
+        if tool.Name == "[Knife]" then
+            getgenv().InventoryConnections[tool.Name .. "_Activated"] = tool.Activated:Connect(function()
+                PlayKnifeSlash(tool)
+            end)
+        end
+    end
+    
+    local function HookAllTools()
+        if client.Backpack then
+            for _, tool in ipairs(client.Backpack:GetChildren()) do
+                HookToolEvents(tool)
+            end
+        end
+        
+        if client.Character then
+            for _, tool in ipairs(client.Character:GetChildren()) do
+                HookToolEvents(tool)
+            end
+        end
+    end
+    
+    local function HookSkinFrame(skinFrame)
+        if not skinFrame:IsA("Frame") or skinFrame.Name == "SkinEntryTemplate" then
+            return false
+        end
+        
+        local button = skinFrame:FindFirstChild("Button")
+        if not button then
+            return false
+        end
+        
+        local weaponName = skinFrame.Name:match("%[(.-)%]")
+        if not weaponName then
+            return false
+        end
+        
+        weaponName = "[" .. weaponName .. "]"
+        local skinDisplayName = skinFrame.Name:gsub("%[.-%]", "")
+        
+        if getgenv().InventoryConnections[skinFrame.Name] and type(getgenv().InventoryConnections[skinFrame.Name]) == "table" then
+            for _, conn in ipairs(getgenv().InventoryConnections[skinFrame.Name]) do
+                pcall(function() conn:Disconnect() end)
+            end
+        end
+        
+        getgenv().InventoryConnections[skinFrame.Name] = {}
+        
+        local function OnSkinClick()
+            InventoryChanger.Functions.Equip(weaponName, skinDisplayName)
+        end
+        
+        local conn = button.Activated:Connect(OnSkinClick)
+        table.insert(getgenv().InventoryConnections[skinFrame.Name], conn)
+        
+        return true
+    end
+    
+    local function HookAllSkins()
+        pcall(function()
+            local playerGui = client:FindFirstChild("PlayerGui")
+            if not playerGui then return end
+            
+            local mainGui = playerGui:FindFirstChild("MainScreenGui")
+            if not mainGui then return end
+            
+            local weaponSkinsGui = mainGui:FindFirstChild("WeaponSkinsGUI")
+            if not weaponSkinsGui then return end
+            
+            local body = weaponSkinsGui:FindFirstChild("Body")
+            if not body then return end
+            
+            local wrapper = body:FindFirstChild("Wrapper")
+            if not wrapper then return end
+            
+            local skinView = wrapper:FindFirstChild("SkinView")
+            if not skinView then return end
+            
+            local frame = skinView:FindFirstChild("Frame")
+            if not frame then return end
+            
+            local skins = frame:FindFirstChild("Skins")
+            if not skins then return end
+            
+            local contents = skins:FindFirstChild("Contents")
+            if not contents then return end
+            
+            local entries = contents:FindFirstChild("Entries")
+            if not entries then return end
+            
+            for _, skinFrame in ipairs(entries:GetChildren()) do
+                HookSkinFrame(skinFrame)
+            end
+            
+            if not getgenv().InventoryConnections.EntriesChildAdded then
+                getgenv().InventoryConnections.EntriesChildAdded = entries.ChildAdded:Connect(function(newSkin)
+                    task.wait(0.1)
+                    HookSkinFrame(newSkin)
+                    UpdateSkinUnlock()
+                end)
+            end
+            
+            UpdateSkinUnlock()
+            GUIHooked = true
+        end)
+    end
+    
+    local function OnSkinsButtonClicked()
+        task.wait(1)
+        HookAllSkins()
+        UpdateSkinUnlock()
+    end
+    
+    local function WatchForSkinsButton()
+        pcall(function()
+            local playerGui = client:WaitForChild("PlayerGui")
+            local mainGui = playerGui:WaitForChild("MainScreenGui")
+            local crew = mainGui:WaitForChild("Crew")
+            local bottomLeft = crew:WaitForChild("BottomLeft").Frame
+            local skinsButton = bottomLeft:WaitForChild("Skins")
+            
+            if getgenv().InventoryConnections.SkinsButton then
+                pcall(function() getgenv().InventoryConnections.SkinsButton:Disconnect() end)
+            end
+            
+            getgenv().InventoryConnections.SkinsButton = skinsButton.Activated:Connect(OnSkinsButtonClicked)
+        end)
+    end
+    
+    local function OnCharacterAdded(character)
+        local function OnCharacterFullyLoaded()
+            task.wait(1)
+            
+            if client.Backpack then
+                for _, tool in ipairs(client.Backpack:GetChildren()) do
+                    if tool:IsA("Tool") and (tool:FindFirstChild("GunScript") or tool.Name == "[Knife]") then
+                        ResetToDefault(tool)
+                    end
+                end
+            end
+            
+            if client.Character then
+                for _, tool in ipairs(client.Character:GetChildren()) do
+                    if tool:IsA("Tool") and (tool:FindFirstChild("GunScript") or tool.Name == "[Knife]") then
+                        OnToolEquipped(tool)
+                    end
+                end
+            end
+            
+            HookAllTools()
+            WatchForSkinsButton()
+            UpdateSkinUnlock()
+            
+            pcall(function()
+                if client.PlayerGui:FindFirstChild("MainScreenGui") and 
+                   client.PlayerGui.MainScreenGui:FindFirstChild("WeaponSkinsGUI") and
+                   client.PlayerGui.MainScreenGui.WeaponSkinsGUI:FindFirstChild("Body") then
+                    task.wait(1)
+                    HookAllSkins()
+                    UpdateSkinUnlock()
+                end
+            end)
+        end
+        
+        if character:FindFirstChild("FULLY_LOADED_CHAR") then
+            OnCharacterFullyLoaded()
+        else
+            local fullyLoadedConn
+            fullyLoadedConn = character.ChildAdded:Connect(function(child)
+                if child.Name == "FULLY_LOADED_CHAR" then
+                    fullyLoadedConn:Disconnect()
+                    OnCharacterFullyLoaded()
+                end
+            end)
+        end
+    end
+    
+    local function OnToolAdded(tool)
+        if tool:IsA("Tool") and (tool:FindFirstChild("GunScript") or tool.Name == "[Knife]") then
+            HookToolEvents(tool)
+            if tool.Parent == client.Character then
+                OnToolEquipped(tool)
+            else
+                ResetToDefault(tool)
+            end
+        end
+    end
+    
+    local function WatchForTools()
+        if client.Backpack then
+            if getgenv().InventoryConnections.BackpackAdded then
+                pcall(function() getgenv().InventoryConnections.BackpackAdded:Disconnect() end)
+            end
+            getgenv().InventoryConnections.BackpackAdded = client.Backpack.ChildAdded:Connect(OnToolAdded)
+        end
+        if client.Character then
+            if getgenv().InventoryConnections.CharacterAdded then
+                pcall(function() getgenv().InventoryConnections.CharacterAdded:Disconnect() end)
+            end
+            getgenv().InventoryConnections.CharacterAdded = client.Character.ChildAdded:Connect(OnToolAdded)
+        end
+    end
+    
+    local function WaitForDataFolder()
+        local startTime = tick()
+        repeat
+            local dataFolder = client:FindFirstChild("DataFolder")
+            if dataFolder then
+                local skinsValue = dataFolder:FindFirstChild("Skins")
+                if skinsValue then
+                    return dataFolder
+                end
+            end
+            task.wait(0.1)
+            if tick() - startTime > 120 then
+                cout('Timeout waiting for data')
+                return nil
+            end
+        until false
+    end
+    
+    local function init()
+        local dataFolder = WaitForDataFolder()
+        if not dataFolder then
+            return
+        end
+        
+        GiveAllSkins()
+        
+        WatchForSkinsButton()
+        WatchForTools()
+        
+        client.CharacterAdded:Connect(function(char)
+            WatchForTools()
+            OnCharacterAdded(char)
+        end)
+        
+        pcall(function()
+            local playerGui = client:WaitForChild("PlayerGui")
+            playerGui.ChildAdded:Connect(function(child)
+                if child.Name == "MainScreenGui" then
+                    task.wait(0.5)
+                    WatchForSkinsButton()
+                    HookAllSkins()
+                end
+            end)
+        end)
+        
+        if client.Character then
+            OnCharacterAdded(client.Character)
+        end
+        
+        cout('Skin changer loaded. Click any skin to equip')
+    end
+    
+    pcall(init)
+end
